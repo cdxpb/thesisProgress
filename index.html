@@ -15,7 +15,6 @@
 
     <nav>
         <a href="#architecture">Architecture</a>
-        <a href="#ablations">Ablations</a>
         <a href="#kimodo">Kimodo</a>
         <a href="#controlnet">ControlNet</a>
         <a href="#scene-aware">Scene-aware</a>
@@ -64,18 +63,18 @@
                 <tr>
                     <td>MoLingo v1, SRM+RoPE (CFG 9.5)</td>
                     <td><strong>3.213</strong></td>
-                    <td>.779*</td>
-                    <td>.903*</td>
-                    <td>.946*</td>
-                    <td>14.656*</td>
+                    <td>.779</td>
+                    <td>.903</td>
+                    <td>.946</td>
+                    <td>14.656</td>
                 </tr>
                 <tr>
                     <td>MoLingo v2, SRM+AdaLN (CFG 9.5)</td>
                     <td>3.314</td>
-                    <td><strong>.801*</strong></td>
-                    <td><strong>.915*</strong></td>
-                    <td><strong>.952*</strong></td>
-                    <td><strong>14.559*</strong></td>
+                    <td><strong>.801</strong></td>
+                    <td><strong>.915</strong></td>
+                    <td><strong>.952</strong></td>
+                    <td><strong>14.559</strong></td>
                 </tr>
             </table>
         </div>
@@ -89,75 +88,12 @@
         </div>
     </section>
 
-    <section id="ablations">
-        <h2><span class="num">2.</span>Selected ablations</h2>
-
-        <div class="subsection">
-            <h3>Sampler and time schedule</h3>
-            <div class="table-wrap">
-                <table>
-                    <tr>
-                        <th>CFG</th>
-                        <th>Config</th>
-                        <th>FID ↓</th>
-                    </tr>
-                    <tr>
-                        <td>4</td>
-                        <td>Default (no Heun, linear)</td>
-                        <td>3.539</td>
-                    </tr>
-                    <tr>
-                        <td>4</td>
-                        <td>Heun-24 + cosine</td>
-                        <td><strong>3.362</strong></td>
-                    </tr>
-                    <tr>
-                        <td>7</td>
-                        <td>Default (no Heun, linear)</td>
-                        <td><strong>3.248</strong></td>
-                    </tr>
-                    <tr>
-                        <td>7</td>
-                        <td>Heun-24 + cosine</td>
-                        <td>3.261</td>
-                    </tr>
-                </table>
-            </div>
-            <p>At lower CFG scale, Heun+cosine gives the lower FID. However at higher CFG, the plain default sampler is
-                better instead.</p>
-        </div>
-
-        <div class="subsection">
-            <h3>Text encoder</h3>
-            <div class="table-wrap">
-                <table>
-                    <tr>
-                        <th>Encoder</th>
-                        <th>FID ↓</th>
-                        <th>R@1 ↑</th>
-                    </tr>
-                    <tr>
-                        <td>T5 (flan-t5-base)</td>
-                        <td>8.3</td>
-                        <td>.63</td>
-                    </tr>
-                    <tr>
-                        <td>LLM2Vec</td>
-                        <td><strong>7.3</strong></td>
-                        <td><strong>.70</strong></td>
-                    </tr>
-                </table>
-            </div>
-            <p>At matched settings, LLM2Vec gives a lower FID and a higher R@1 than T5.</p>
-        </div>
-    </section>
-
     <section id="kimodo">
-        <h2><span class="num">3.</span>Kimodo (273-dim representation)</h2>
+        <h2><span class="num">2.</span>Kimodo (273-dim representation)</h2>
         <p>We adopted Kimodo's 273-dim representation mainly for its downstream applications. It is built to retarget
             onto real robot skeletons, like the Unitree G1, for physical deployment, something the standard HumanML3D
             representation does not support. It also adds foot-contact and canonical-joint information that the 272-dim
-            representation lacks, which later turned out to help with the scene and object grounding in Section 5.</p>
+            representation lacks, which later turned out to help with the scene and object grounding in Section 4.</p>
         <p>Kimodo's own reference model is a discrete diffusion model with no latent space. We built our own VAE and a
             continuous-latent diffusion model on top instead, following the same design as Section 1.</p>
         <p>We re-tested SRM+RoPE against SRM+AdaLN on this new data before committing to one. SRM+AdaLN showed less
@@ -166,12 +102,10 @@
     </section>
 
     <section id="controlnet">
-        <h2><span class="num">4.</span>Kimodo ControlNet videos</h2>
+        <h2><span class="num">3.</span>Kimodo ControlNet videos</h2>
         <p>This ControlNet brings Kimodo-style control, such as following a root trajectory or matching a few keyframes,
             to our own VAE-latent model. In each clip below, the control signal comes from one motion, but the text
             prompt asks for a different action.</p>
-
-
 
         <div class="video-block">
             <h3>013022, root control</h3>
@@ -203,7 +137,7 @@
     </section>
 
     <section id="scene-aware">
-        <h2><span class="num">5.</span>Scene-aware and object interaction</h2>
+        <h2><span class="num">4.</span>Scene-aware and object interaction</h2>
         <p>This is the current phase. It extends the same ControlNet with a scene encoder and an object encoder, so the
             model can navigate a scene and interact with objects, such as reaching for or sitting on them. It is trained
             on TRUMANS data.</p>
