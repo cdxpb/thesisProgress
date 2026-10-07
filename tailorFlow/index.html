@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TailorFlow &mdash; latest vs old</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mute:#666;--line:#e2e2e2;--code:#f4f4f2;--accent:#2b5d8a;--win:#1f6b45}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151515;--fg:#e8e8e8;--mute:#999;--line:#333;--code:#202020;--accent:#8ab8e0;--win:#79c99e}}
+:root[data-theme="dark"]{--bg:#151515;--fg:#e8e8e8;--mute:#999;--line:#333;--code:#202020;--accent:#8ab8e0;--win:#79c99e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 Georgia,"Times New Roman",serif;padding-inline:16px;padding-block:40px 64px}
+main{max-width:1000px;margin:0 auto}
+h1{font-size:28px;font-weight:normal;margin:0 0 6px}
+h2{font-size:18px;font-weight:normal;margin:44px 0 10px}
+h3{font-size:15px;font-weight:bold;margin:30px 0 4px}
+p{margin:0 0 12px}
+a{color:var(--accent)}
+.mute{color:var(--mute)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:660px}
+th,td{text-align:left;vertical-align:top;padding:11px 14px 11px 0;border-top:1px solid var(--line)}
+th{font-weight:normal;color:var(--mute);font-size:13px;border-top:0}
+.cmp td:first-child{width:118px;color:var(--mute)}
+.cmp td:nth-child(2){width:31%}
+.cmp td p{margin:0 0 6px}
+.cmp td p:last-child{margin:0}
+.num{min-width:720px;font-size:13.5px}
+.num th,.num td{padding:7px 12px 7px 0;text-align:right;white-space:nowrap}
+.num th:first-child,.num td:first-child{text-align:left;white-space:normal;width:26%}
+.num th:nth-child(2),.num td:nth-child(2){text-align:right}
+.num tbody tr:hover td{background:var(--code)}
+.num .ours td{font-weight:bold;color:var(--win)}
+.num .ref td{color:var(--mute)}
+.best{text-decoration:underline;text-underline-offset:3px}
+td code,p code,li code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:1px 4px;border-radius:3px}
+ul{margin:0;padding-left:18px}
+li{margin:0 0 4px}
+.who{color:var(--mute);font-size:13px;margin:0 0 4px}
+.who b{color:var(--fg);font-weight:normal}
+.figrow{margin:0 0 26px}
+.figrow figure{margin:0}
+.figrow img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:4px;background:#fff}
+#figures p{max-width:78ch}
+</style>
+</head>
+<body>
+<main>
+<h1>Latest vs old</h1>
+
+<div class="scroll">
+<table class="cmp">
+<tr><th></th><th>Old</th><th>Latest</th></tr>
+
+<tr><td>Points</td><td>2,048</td><td>4,096; up to 32,768 at sampling</td></tr>
+
+<tr><td>VAE size</td><td>55.9 M parameters</td><td><b>13.5 M</b> parameters</td></tr>
+
+<tr><td>Encoder input</td>
+<td>Garment, body, occupancy, class &mdash; body-aware through a Body-PVConv voxel branch at every layer</td>
+<td><p>Garment only, first transferred to a fixed canonical body (mean of 256 training bodies). The encoder is body-free.</p>
+<p>Transfer: each point keeps its offsets to its 8 nearest body vertices, rotated with their normals, re-attached to the same vertices on the canonical body, distance-weighted.</p></td></tr>
+
+<tr><td>Latent</td>
+<td>Global + per-point latent <code>h</code> with a learned feature channel</td>
+<td>Global (128) + 4,096 &times; <b>3</b> &mdash; point positions only, no feature channel. Body shape is absent, so the same garment on different bodies encodes to nearly the same latent.</td></tr>
+
+<tr><td>Body in decoder</td>
+<td>Extra voxel branch on body points in each layer</td>
+<td>Separate body tower on the target body (6,890 verts + normals + &beta;<sub>10</sub>): a global body code conditions every layer, 2,048 landmarks are cross-attended, and per-level body features are added from the 8 nearest points.</td></tr>
+
+<tr><td>Occupancy</td>
+<td>Input through a separate MLP autoencoder on <code>z<sub>o</sub></code></td>
+<td><p>Per-vertex mask (covered / free / unknown) from rays along body normals. Edited directly; <b>no autoencoder</b>.</p>
+<p>Training: the encoder sees the garment cut by mask A, the decoder gets mask B and must output the garment cut by B &mdash; trim, grow, or both. Cuts: hem, sleeves per arm, overlap with a smaller garment. 30% of rows have no mask. The prior re-reads the mask at every step.</p></td></tr>
+
+<tr><td>VAE loss</td>
+<td>Chamfer + L1 + KL</td>
+<td>Chamfer + EMD + ordered L1 + kNN edge-length preservation + KL + keep-head BCE. Some rows decoded on another body.</td></tr>
+
+<tr><td>Prior</td>
+<td>DDPM, &epsilon;-prediction, 1,000 steps; two latent DDPMs; the local prior sees the body</td>
+<td><b>Rectified flow</b>, clean-latent (x) prediction with velocity loss: <code>x_t = (1&minus;t)&eta; + t z</code>, logit-normal <code>t</code>, exact minibatch OT coupling per class, 64 Euler/Heun steps. Class and occupancy only &mdash; <b>no body</b>. 46.8 M parameters.</td></tr>
+
+<tr><td>Guidance</td><td>Classifier-free, class + occupancy, cfg 2.0</td><td>Classifier-free on class with a learned occupancy null token. Shipped runs use <b>cfg 1.0</b>; there is no separate occupancy-guidance path in the code.</td></tr>
+
+<tr><td>Editing</td>
+<td>Occupancy latent interpolation + DF projection</td>
+<td>One unified latent edit: the keep head trims to the painted mask, the prior inpaints newly covered regions, and a 2&times;2 cm band of old points along the grow direction is released and regenerated for a clean seam.</td></tr>
+
+<tr><td>Refinement</td><td>Distance-field projection module</td><td><b>Removed.</b> No distance field or refinement code exists. Thin surfaces now come from the deterministic position latent, the keep head, and screened-Poisson meshing with boundary and interior smoothing.</td></tr>
+</table>
+</div>
+
+<h2 id="bench">Benchmarks</h2>
+
+<h3>1-NNA % (CD / EMD), lower is better</h3>
+<div class="scroll">
+<table class="num">
+<thead><tr><th>Method</th><th>Upper</th><th>Trousers</th><th>Skirt</th><th>Dress</th><th>Jumpsuit</th><th>Dress+Jumpsuit</th></tr></thead>
+<tbody>
+<tr class="ours"><td>TailorDiff (ours)</td><td>62.6 / 59.4</td><td>52.5 / 57.8</td><td>68.4 / 53.5</td><td>64.1 / 59.0</td><td>58.1 / 53.6</td><td>61.1 / 56.1</td></tr>
+<tr class="ours"><td>TailorDiff grow fine-tune (ours)</td><td>55.6 / 59.4</td><td>51.0 / 52.9</td><td>68.4 / 52.3</td><td>65.5 / 58.6</td><td>56.2 / 59.9</td><td>61.3 / 56.2</td></tr>
+<tr class="ref"><td>Training data (floor)</td><td>51.1 / 50.0</td><td>50.5 / 44.6</td><td>59.8 / 55.1</td><td>&mdash;</td><td>&mdash;</td><td>56.5 / 50.1</td></tr>
+<tr><td>SMPLicit</td><td>85.2 / 76.7</td><td>89.1 / 76.7</td><td>94.8 / 86.4</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>DrapeNet</td><td>83.2 / 70.3</td><td>75.6 / 61.1</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>DIG</td><td>82.3 / 78.9</td><td>68.2 / 58.1</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>ISP</td><td>91.8 / 86.7</td><td>97.8 / 96.8</td><td>97.5 / 97.7</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>NeuralABC</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>63.2 / 58.4</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Body&ndash;cloth intersection %, lower is better</h3>
+<div class="scroll">
+<table class="num">
+<thead><tr><th>Method</th><th>Upper</th><th>Trousers</th><th>Skirt</th><th>Dress</th><th>Jumpsuit</th><th>Dress+Jumpsuit</th></tr></thead>
+<tbody>
+<tr class="ours"><td>TailorDiff (ours)</td><td>0.13 &plusmn; 0.15 [0.34]</td><td>0.10 &plusmn; 0.16 [0.59]</td><td>0.08 &plusmn; 0.15 [0.18]</td><td>0.13 &plusmn; 0.15 [0.32]</td><td>0.25 &plusmn; 0.26 [0.78]</td><td>0.17 &plusmn; 0.19 [0.47]</td></tr>
+<tr class="ours"><td>TailorDiff grow fine-tune (ours)</td><td>0.10 &plusmn; 0.14 [0.27]</td><td>0.10 &plusmn; 0.19 [0.56]</td><td>0.06 &plusmn; 0.14 [0.16]</td><td>0.14 &plusmn; 0.17 [0.33]</td><td>0.24 &plusmn; 0.24 [0.76]</td><td>0.17 &plusmn; 0.19 [0.47]</td></tr>
+<tr class="ref"><td>Training data (floor)</td><td>0.00 &plusmn; 0.03 [0.01]</td><td>0.02 &plusmn; 0.13 [0.31]</td><td>0.10 &plusmn; 0.24 [0.13]</td><td>0.00 &plusmn; 0.01 [0.02]</td><td>0.00 &plusmn; 0.00 [0.16]</td><td>0.00 &plusmn; 0.00 [0.09]</td></tr>
+<tr class="ref"><td>GT held-out</td><td>0.00 &plusmn; 0.03 [0.01]</td><td>0.01 &plusmn; 0.09 [0.25]</td><td>0.06 &plusmn; 0.18 [0.08]</td><td>0.00 &plusmn; 0.00 [0.02]</td><td>0.00 &plusmn; 0.00 [0.11]</td><td>0.00 &plusmn; 0.00 [0.05]</td></tr>
+<tr><td>SMPLicit</td><td>11.86 &plusmn; 13.06 [12.37]</td><td>28.09 &plusmn; 12.07 [30.14]</td><td>18.45 &plusmn; 8.50 [20.03]</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>DrapeNet</td><td>0.48 &plusmn; 1.98 [0.53]</td><td>1.12 &plusmn; 4.58 [1.34]</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>DIG</td><td>0.00 &plusmn; 0.03 [0.01]</td><td>0.00 &plusmn; 0.00 [0.00]</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>ISP</td><td>0.32 &plusmn; 1.11 [0.46]</td><td>0.18 &plusmn; 0.70 [0.82]</td><td>0.17 &plusmn; 0.56 [0.46]</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>NeuralABC</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>1.41 &plusmn; 5.40 [2.43]</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Reconstruction (CD / P2S, cm), lower is better</h3>
+<div class="scroll">
+<table class="num">
+<thead><tr><th>Method</th><th>Upper</th><th>Trousers</th><th>Skirt</th></tr></thead>
+<tbody>
+<tr><td>DrapeNet [10]</td><td>1.522 / 0.631&dagger;</td><td>1.585 / 0.739&dagger;</td><td>&ndash; / &ndash;</td></tr>
+<tr><td>ISP [26]</td><td>2.213 / 1.032</td><td>2.333 / 1.214</td><td>6.468 / 2.925</td></tr>
+<tr><td>WordRobe [52]</td><td>1.491 / 0.635&dagger;</td><td>1.568 / 0.703&dagger;</td><td>&ndash; / &ndash;</td></tr>
+<tr class="ours"><td>Ours</td><td>0.457 / 0.145</td><td>0.449 / 0.140</td><td>0.627 / 0.187</td></tr>
+</tbody>
+</table>
+</div>
+
+
+<h3>Diverse samples</h3>
+<div class="figrow">
+<figure><img src="figs/dress_male_L1_mesh.png" alt="Five sampled dresses on five male bodies"></figure>
+</div>
+<div class="figrow">
+<figure><img src="figs/jumpsuit_male_L1_mesh.png" alt="Five sampled jumpsuits on five male bodies"></figure>
+</div>
+<div class="figrow">
+<figure><img src="figs/skirt_female_L3_mesh.png" alt="Five sampled skirts on five female bodies"></figure>
+</div>
+
+<h3>Interpolation between two garments</h3>
+<div class="figrow">
+<figure><img src="figs/grid_slerp_dress_A_mesh.png" alt="Six-frame interpolation between two dresses"></figure>
+</div>
+<div class="figrow">
+<figure><img src="figs/grid_slerp_trousers_A_mesh.png" alt="Six-frame interpolation between two pairs of trousers"></figure>
+</div>
+
+<h3>Body transfer</h3>
+<div class="figrow">
+<figure><img src="figs/dress_female_mono_strong_mesh.png" alt="One dress decoded on five bodies of increasing height and build"></figure>
+</div>
+<div class="figrow">
+<figure><img src="figs/jumpsuit_female_mono_strong_mesh.png" alt="One jumpsuit decoded on five bodies of increasing height and build"></figure>
+</div>
+
+<h3>Fine coverage editing</h3>
+<div class="figrow">
+<figure><img src="figs/upper_sleeve-trim_mesh.png" alt="Four progressive sleeve-trim steps on an upper garment"></figure>
+</div>
+<div class="figrow">
+<figure><img src="figs/occ_upper_grow_s_male_b3_mesh.png" alt="Sleeve grow on a male body: base sample then four inpaint steps"></figure>
+</div>
+
+<h3>Correspondence</h3>
+<div class="figrow">
+<figure><img src="figs/corr_dress_b0.png" alt="Point correspondence on a dress, first body"></figure>
+</div>
+<div class="figrow">
+<figure><img src="figs/corr_dress_b1.png" alt="Point correspondence on a dress, second body"></figure>
+</div>
+
+</main>
+</body>
+</html>

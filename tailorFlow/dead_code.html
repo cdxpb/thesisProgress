@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code that is no longer needed &mdash; final VAE + prior</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mute:#666;--line:#e2e2e2;--code:#f4f4f2;--accent:#2b5d8a;--warn:#8a4b1f;--del:#a33}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151515;--fg:#e8e8e8;--mute:#999;--line:#333;--code:#202020;--accent:#8ab8e0;--warn:#d9a06a;--del:#e08a8a}}
+:root[data-theme="dark"]{--bg:#151515;--fg:#e8e8e8;--mute:#999;--line:#333;--code:#202020;--accent:#8ab8e0;--warn:#d9a06a;--del:#e08a8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 Georgia,"Times New Roman",serif;padding-inline:16px;padding-block:40px 72px}
+main{max-width:990px;margin:0 auto}
+h1{font-size:28px;font-weight:normal;margin:0 0 6px}
+h2{font-size:19px;font-weight:normal;margin:44px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+h3{font-size:15px;font-weight:bold;margin:24px 0 8px}
+p{margin:0 0 12px}
+a{color:var(--accent)}
+.mute{color:var(--mute)}
+.lead{font-size:16px;color:var(--mute)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:700px;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:9px 14px 9px 0;border-top:1px solid var(--line)}
+th{font-weight:normal;color:var(--mute);font-size:13px;border-top:0;white-space:nowrap}
+td code,p code,li code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:1px 4px;border-radius:3px}
+td:first-child{white-space:nowrap}
+ul{margin:0 0 12px;padding-left:20px}
+li{margin:0 0 5px}
+.tag{display:inline-block;font-size:11.5px;border-radius:3px;padding:0 6px;margin-right:6px;border:1px solid var(--line);color:var(--mute);white-space:nowrap}
+.tag.free{color:#2e7d4f;border-color:#2e7d4f}
+.tag.keep{color:#2b5d8a;border-color:#2b5d8a}
+.tag.risky{color:var(--warn);border-color:var(--warn)}
+.tag.gone{color:var(--del);border-color:var(--del);text-decoration:line-through}
+.note{border-left:2px solid var(--accent);padding:2px 0 2px 13px;margin:16px 0;color:var(--mute);font-size:14px}
+.warn{border-left:2px solid var(--warn);padding:2px 0 2px 13px;margin:16px 0;font-size:14px}
+nav{font-size:13.5px;color:var(--mute);margin:0 0 26px}
+nav a{margin-right:14px}
+.bar{display:flex;height:22px;border-radius:3px;overflow:hidden;border:1px solid var(--line);margin:6px 0 4px}
+.bar i{display:block}
+.legend{font-size:12.5px;color:var(--mute);display:flex;gap:16px;flex-wrap:wrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:1px}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Code that is no longer needed</h1>
+<p class="lead">A pruning pass over <code>v2/</code> given that the final pair is fixed:
+VAE <code>vae_vx</code> @ <code>frozen/ckpt_020000.pt</code> and prior
+<code>pr_vx20_d512_ft_lr3e5</code> @ <code>ckpt_020000.pt</code>. Each entry says what it is, what still needs it, and what
+breaks if it goes. Nothing here has been deleted &mdash; this is the inventory to act on.</p>
+
+<nav>
+<a href="index.html">&larr; latest vs old</a>
+<a href="model.html">full model detail</a>
+<a href="#flags">Dead flags</a>
+<a href="#branches">Dead branches</a>
+<a href="#files">Dead files</a>
+<a href="#deps">Dead dependencies</a>
+<a href="#artifacts">Disk</a>
+<a href="#keep">Do not touch</a>
+<a href="#order">Removal order</a>
+</nav>
+
+<h2 id="flags">1 &middot; Flags that are dead for this configuration</h2>
+<p>These are parsed and threaded through the code, but their <em>current</em> value makes the feature unreachable. They are
+the cheapest deletions and the least risky, with two exceptions noted.</p>
+
+<h3>VAE (<code>v2/train_vae.py</code>, all currently at their non-exercising value in <code>vae_vx</code>)</h3>
+<table>
+<tr><th>Flag</th><th>Shipped</th><th>What it would do</th><th>Verdict</th></tr>
+<tr><td><code>--l1_plain</code></td><td>0</td><td>restrict ordered L1 to plain rows only</td><td><span class="tag free">free</span>one <code>if</code> at <code>train_vae.py:452</code>; the effect is subsumed by the default <code>lw</code> path</td></tr>
+<tr><td><code>--kl_recon_only</code></td><td>0</td><td>drop KL on trim rows</td><td><span class="tag free">free</span>a single branch, no coupling</td></tr>
+<tr><td><code>--freeze_enc_at</code></td><td>0</td><td>freeze the cloth encoder after step N</td><td><span class="tag risky">risky</span>it also swaps the optimiser to two parameter groups. If you want a single-group optimiser, delete the flag <em>and</em> the two-group construct at <code>train_vae.py:196</code></td></tr>
+<tr><td><code>--ddp_bf16</code></td><td>0</td><td>bf16 gradient all-reduce</td><td><span class="tag free">free</span>4 lines, pure perf knob</td></tr>
+<tr><td><code>--pt_sigma=0</code> branch</td><td>1.5</td><td>learned vs fixed position &sigma;</td><td><span class="tag keep">keep</span>the fixed-&sigma; path is what the final model uses; the <em>learned</em> path is the dead half, and it can go once you are sure no older checkpoint is reloaded</td></tr>
+<tr><td><code>--enc_local=hier</code></td><td><b>voxel</b></td><td>point-hierarchy local encoder instead of the voxel U-Net</td><td><span class="tag risky">risky</span>this is the biggest reachable-by-flag block: <code>ClothEncoder.backbone</code> would become a bare <code>VoxelUNet</code>, and <code>hier_vd[1:]</code> becomes unused. Worth deleting, but it changes <code>ClothEncoder.__init__</code></td></tr>
+<tr><td><code>--trim_edge</code>, <code>--grow_w</code></td><td>0 / 0.1</td><td>edge loss on trim rows; grow-row CD weight</td><td><span class="tag keep">keep</span><code>grow_w</code> is live (0.1 is not the default); <code>trim_edge=0</code> is a one-line branch but it is a useful ablation switch for the paper</td></tr>
+<tr><td><code>--kl_w</code>, <code>--lr_sched</code>, <code>--lr_warmup</code>, <code>--best_path</code> bookkeeping</td><td>0.01 / const</td><td>global KL multiplier; schedule</td><td><span class="tag keep">keep</span>cheap and they document the recipe</td></tr>
+</table>
+
+<h3>Prior (<code>v2/train_prior.py</code>)</h3>
+<table>
+<tr><th>Flag</th><th>Shipped</th><th>What it would do</th><th>Verdict</th></tr>
+<tr><td><code>--inp_patches</code>, <code>--inp_patch_r</code></td><td><b>0</b> / (0.03, 0.15)</td><td>also free U{0..k} random balls of kept latent rows, with radius in <code>inp_patch_r</code></td><td><span class="tag free">free</span>the whole ball-holing block in <code>inpaint_rows</code> (<code>train_prior.py:236-244</code>) is skipped when 0. <code>inp_patch_r</code> exists only to feed it</td></tr>
+<tr><td><code>--inp_seam_w</code></td><td><b>0.0</b></td><td>up-weight generated rows near a held row by <code>1 + w&#183;exp(&#8722;d/4s)</code></td><td><span class="tag free">free</span><code>LocalFlow.loss</code> guards it with <code>if self.seam_w &gt; 0</code>. Deleting it also deletes the <code>known_proximity</code> call inside the loss</td></tr>
+<tr><td><code>--val</code></td><td><b>0</b></td><td>in-training 1-NNA validation, inpaint validation and render dumps every <code>save_every</code></td><td><span class="tag keep">keep</span>it is off here, but a fine-tune will want it. Turning it off is what made this run cheap, not a design decision</td></tr>
+<tr><td><code>--known_prox</code></td><td>absent &rarr; <code>False</code></td><td>extra proximity features on held rows</td><td><span class="tag free">free</span>never enabled in any shipped config. Verified against the checkpoint: <code>kprox_proj</code> is <b>not</b> in the final prior's <code>ema</code> state dict, so the module was never constructed and removing it cannot break loading. <code>known_proximity()</code> itself is still reached by the loss when <code>--inp_seam_w &gt; 0</code></td></tr>
+<tr><td><code>known_mode='joint'</code></td><td><code>clamp</code></td><td>held rows ride their own noise&#8594;data path instead of being pinned</td><td><span class="tag risky">risky</span>hard-coded to <code>'clamp'</code> in <code>train_prior.py:93</code> and written into the config, but <code>common.py</code> still reads the key. Removing the branch means all old prior checkpoints must have been trained with <code>clamp</code></td></tr>
+<tr><td><code>--use_zg=0</code> (<code>--local_zg</code>)</td><td>1</td><td>zero the global-latent conditioning</td><td><span class="tag keep">keep</span>it is the ablation that proves the two-level latent matters (<code>pr_vx20_got</code> exists for exactly this)</td></tr>
+<tr><td><code>--ot_global</code></td><td>1</td><td>solve the OT coupling over all ranks vs per GPU</td><td><span class="tag keep">keep</span>the global version is what the final run used, but the flag is 6 lines and the difference is measurable</td></tr>
+<tr><td><code>--timing=2</code> branch</td><td>0</td><td>torch profiler dump at step 100</td><td><span class="tag free">free</span>a debug-only branch</td></tr>
+<tr><td><code>--frac_w</code></td><td>1.0</td><td>FracHead BCE weight</td><td><span class="tag keep">keep</span>live and central to grow; the FracHead itself is what <code>inpaint_prior</code> depends on</td></tr>
+<tr><td><code>--ckpt_keep_after=0</code></td><td>0</td><td>keep every <code>ckpt_NNNNNN.pt</code></td><td><span class="tag keep">keep</span>but see <a href="#artifacts">disk</a> &mdash; this is why the run wrote 11 &times; 772 MB</td></tr>
+</table>
+
+<h2 id="branches">2 &middot; Dead code inside live files</h2>
+<table>
+<tr><th>Symbol</th><th>File</th><th>Status</th></tr>
+<tr><td><code>enc_local='hier'</code> branch</td><td><code>model.py:ClothEncoder.__init__</code></td><td><span class="tag risky">risky</span>a whole <code>HierEncoder</code> instantiation that never runs &mdash; confirmed: the final VAE's state dict has no <code>cloth_enc.downs</code>/<code>.ups</code> keys. <code>HierEncoder</code> itself stays &mdash; the decoder and body tower use it</td></tr>
+<tr><td><code>fourier_enc</code></td><td><code>model.py:35</code></td><td><span class="tag free">free</span>the VAE does not use it (<code>nfreq</code> lives in the prior, which has its own copy at <code>prior.py</code> via <code>temb</code>/the local head). Safe to drop from <code>model.py</code></td></tr>
+<tr><td><code>reanchor_pts</code>'s <code>c &lt; &#8722;0.999</code> fallback</td><td><code>model.py:11-16</code></td><td><span class="tag keep">keep</span>numerical guard, keep</td></tr>
+<tr><td><code>known_proximity</code></td><td><code>prior.py:193</code></td><td><span class="tag risky">risky</span>still reachable via <code>--inp_seam_w &gt; 0</code> and <code>--known_prox</code>, both off. If both flags go, this goes</td></tr>
+<tr><td><code>pin_known</code>'s joint branch</td><td><code>prior.py:205</code></td><td><span class="tag risky">risky</span>see <code>known_mode</code> above</td></tr>
+<tr><td><code>LocalPrior.kprox_proj</code></td><td><code>prior.py:101</code></td><td><span class="tag free">free</span>absent from the final checkpoint (see <code>--known_prox</code> above), so it is never constructed at <code>known_prox=False</code> and can be deleted outright with no effect on loading</td></tr>
+<tr><td><code>OccEncoder.null</code> + <code>drop=</code> path</td><td><code>prior.py:17</code></td><td><span class="tag keep">keep</span>live: <code>occ_cond_drop=0.25</code> is on in the final prior</td></tr>
+<tr><td>the encoder's copy of <code>hier_vd</code></td><td><code>model.py:build_vae</code></td><td><span class="tag keep">keep</span>not dead, but misleading: in voxel mode the encoder runs at <code>vd=64</code> and ignores <code>hier_vd</code> entirely. <code>hier_vd</code> still configures the decoder (all 5 levels) and body tower, so it cannot be dropped from the config &mdash; only from the encoder's constructor call</td></tr>
+<tr><td><code>df</code>-anything, <code>refine</code>, <code>DistanceField</code></td><td>all of <code>v2/</code></td><td><span class="tag gone">gone</span><b>already absent.</b> The distance-field module was removed from the code; only the paper draft still describes it</td></tr>
+<tr><td><code>decode_occ</code>'s three-state logic</td><td><code>common.py:95</code></td><td><span class="tag keep">keep</span>live: it is what maps &ldquo;occupancy unused&rdquo; to the trained <code>&minus;1</code> unknown state</td></tr>
+</table>
+
+<h2 id="files">3 &middot; Files</h2>
+<table>
+<tr><th>Path</th><th>What it is</th><th>Verdict</th></tr>
+<tr><td><code>v2/tmp_interp2.py</code><br><code>v2/tmp_interp_diag.py</code><br><code>v2/tmp_slerp_endpoints.py</code><br><code>v2/tmp_zgdiag.py</code></td><td>one-off diagnostics for interpolation / global-latent behaviour, superseded by <code>paper_slerp.py</code>, <code>paper_interp2.py</code> and the viz</td><td><span class="tag free">free</span>delete; nothing outside <code>v2/exps/_tools</code> imports them</td></tr>
+<tr><td><code>v2/paper_audition.py</code>, <code>paper_correspond.py</code>, <code>paper_materials.py</code>, <code>paper_rerender.py</code>, <code>paper_figures.py</code>, <code>paper_collect_plan.py</code></td><td>figure/campaign scaffolding; several were superseded by <code>paper.py</code> + <code>paper_collect.py</code></td><td><span class="tag risky">risky</span>check which figure each still produces before removing; they are untracked in git, so a deletion is unrecoverable</td></tr>
+<tr><td><code>v2/eval_prior.py</code></td><td>per-class 1-NNA-CD + penetration of prior samples &mdash; the source of the results table</td><td><span class="tag keep">keep</span>this is the paper's generative metric</td></tr>
+<tr><td><code>v2/run_pipeline.py</code></td><td>prior &#8594; decode &#8594; Poisson mesh &#8594; renders, with mesh stats</td><td><span class="tag keep">keep</span>the only end-to-end smoke test of the pair</td></tr>
+<tr><td><code>v2/viz/bodymodel.py</code></td><td>separate SMPL <code>&beta;</code>&#8594;verts implementation for bodies never seen in training</td><td><span class="tag keep">keep</span>the viz and all paper figures pin bodies through it</td></tr>
+<tr><td><code>v2/third_party/chamfer3d</code></td><td>Chamfer CUDA kernel (MIT)</td><td><span class="tag keep">keep</span>used by the VAE loss and 1-NNA</td></tr>
+<tr><td><code>v2/third_party/emd</code></td><td>EMD and EMD-fast kernels</td><td><span class="tag keep">keep</span>used by the VAE loss; both are loaded from the same dir</td></tr>
+<tr><td><code>v2/third_party/fps</code></td><td>CUDA farthest-point sampling</td><td><span class="tag keep">keep</span><code>metrics.fps</code> resolves to it, and every coverage cut uses FPS</td></tr>
+<tr><td><code>v2/data/archive</code> (13 GB)</td><td>the pre-2026-09-19 T-pose / A-pose datasets with the 55.9 M VAE latents</td><td><span class="tag free">free</span>only the four retired experiments read it; see <a href="#artifacts">disk</a></td></tr>
+</table>
+<div class="warn"><b>Superseded but still <em>reachable</em>:</b> the root-level <code>train_vae.py</code>, <code>train.py</code>,
+<code>eval_vae.py</code>, <code>demo_uncvae_conprior.py</code>, <code>default_config.py</code>, <code>utils/</code>,
+<code>trainers/</code>, <code>models/</code>, <code>scripts/</code> and <code>baselines/</code> belong to the <em>V1</em>
+pipeline, not to <code>v2/</code>. They reference the old 55.9 M VAE and the old DDPM prior and will not load the final
+checkpoints. If the repo is ever published from this directory, they need to be moved out of the tree, not just left unused.</div>
+
+<h2 id="deps">4 &middot; Dependencies that are already clean</h2>
+<p>Everything inside <code>v2/</code> &mdash; including all of the untracked <code>paper_*.py</code> &mdash; imports only
+<code>v2.*</code> and <code>torch, numpy, scipy, pytorch3d, PIL, trimesh</code>, plus <code>flask</code> for the viz and
+<code>wandb</code> optionally. The V1 leftovers at the repo root are the only code that pulls in anything else.
+In particular, <b>the root-level <code>utils/</code>, <code>models/</code>, <code>trainers/</code> and
+<code>scripts/</code> are not imported by <code>v2/</code> at all</b>, and the <code>v2/model.py</code> comment chain that
+still says &ldquo;PVConv&rdquo; describes a layer that does not exist: there is no PVConv anywhere in <code>v2/</code>.</p>
+
+<h2 id="artifacts">5 &middot; Disk</h2>
+<p><code>v2/exps/</code> is <b>249 GB</b>. The two final runs together are <b>11.4 GB</b>.</p>
+<div class="bar">
+<i style="width:5.4%;background:#2b5d8a" title="final VAE + prior"></i>
+<i style="width:14.6%;background:#c8a24a" title="pr_vx20_d512, the base the final prior fine-tuned from"></i>
+<i style="width:80%;background:#a33" title="retired experiments"></i>
+</div>
+<div class="legend">
+<span><span class="dot" style="background:#2b5d8a"></span>final pair &mdash; 11.4 GB</span>
+<span><span class="dot" style="background:#c8a24a"></span>init source <code>pr_vx20_d512</code> &mdash; 24.3 GB (contains <code>ckpt_040000.pt</code>)</span>
+<span><span class="dot" style="background:#a33"></span>everything else &mdash; 199 GB</span>
+</div>
+<table>
+<tr><th>Group</th><th>Size</th><th>Note</th></tr>
+<tr><td><code>vae_vx</code></td><td>1.71 GB</td><td>keep. <code>frozen/</code> holds the step the prior was trained on; the parent dir holds the resumable <code>ckpt.pt</code> with the optimiser</td></tr>
+<tr><td><code>pr_vx20_d512_ft_lr3e5</code></td><td>9.15 GB</td><td>keep <code>ckpt_020000.pt</code> (the final prior), <code>ckpt_latest.pt</code>, <code>stats.pt</code>, <code>config.json</code>. The other ten <code>ckpt_NNNNNN.pt</code> are ~772 MB each and are inference-only intermediates</td></tr>
+<tr><td><code>pr_vx20_d512</code></td><td>24.30 GB</td><td>the 40k-step base. Needed to reproduce the fine-tune, not to run anything</td></tr>
+<tr><td><code>final18sep</code>, <code>pr_rc_l1</code>, <code>ap_edit_final</code>, <code>rc_l1</code>, <code>pr_rc_l1_xts_nf6</code></td><td>84.2 GB</td><td>the pre-2026-09-19 55.9 M VAE / old-data line. Retired; they need <code>C3D_ROOT=v2/data/archive/…</code></td></tr>
+<tr><td><code>pr_vx20_d384*</code>, <code>pr_vx20_d512_ft_p025</code>, <code>pr_vx20_got</code></td><td>53.6 GB</td><td>ablation siblings of the final prior (width, KL, no-global-conditioning). The <code>got</code> run is the <code>local_zg=0</code> control and is worth keeping for one table</td></tr>
+<tr><td><code>pr_edl120_*</code>, <code>edl*_slot</code>, <code>ed_slot</code>, <code>pr_c20_*</code>, <code>pr_qc22_*</code>, <code>pr_l1e22_cos</code>, <code>pr_nol1s30_cos</code>, <code>pr_inp*</code>, <code>trim_ft</code>, <code>pr_joint_ft</code></td><td>~85 GB</td><td>hyper-parameter search history. Nothing in <code>v2/</code> or <code>docs/</code> refers to them</td></tr>
+<tr><td><code>v2/data/archive</code></td><td>13 GB</td><td>only the retired experiments above open it</td></tr>
+</table>
+<p class="note">A safe order: delete the retired + hyper-parameter-search experiment directories first (they are reproducible
+only from configs you no longer need), then all but the final checkpoint in each surviving run, and only then consider
+<code>pr_vx20_d512</code> and <code>data/archive</code>. The <code>frozen/</code> copies are deliberate &mdash; they pin the
+exact VAE weights the prior saw, so do not dedupe them against the parent directory.</p>
+
+<h2 id="keep">6 &middot; Do not delete, even though it looks idle</h2>
+<ul>
+<li><code>v2/exps/vae_vx/frozen/ckpt_020000.pt</code> &mdash; the prior's <code>stats.pt</code> keys its whitening cache on this exact path <em>and</em> step. Renaming or deduping it invalidates the cache and silently changes sampling.</li>
+<li><code>stats.pt</code> &mdash; holds <code>pm, psd, gm, gsd</code> plus a staleness key. Regenerating it changes the latent space the prior expects.</li>
+<li><code>OccEncoder</code>, <code>FracHead</code>, the keep head, and <code>occ_smooth=3</code> &mdash; all three are load-bearing for grow, which is the paper's editing contribution.</li>
+<li><code>sample_local_partitioned</code> &mdash; the only way to sample above 4096 points, and the eval uses 16k/32k. Note the <code>cfg==1.0</code> assertion: it silently constrains the guidance scale.</li>
+<li><code>garment_mesh</code>'s <code>b3x_lap15</code> preset &mdash; the viz exposes it and the paper uses both presets.</li>
+<li><code>v2/viz/bodymodel.py</code>'s train-set coverage cache &mdash; used for in-distribution random masks, not just for bodies.</li>
+</ul>
+
+<h2 id="order">7 &middot; Suggested removal order</h2>
+<ol>
+<li><b>Zero risk, config only:</b> delete <code>--inp_patch_r</code>/<code>--inp_patches</code> (already 0), <code>--inp_seam_w</code> (already 0) and <code>--l1_plain</code> (already 0) from <code>train_prior.py</code>/<code>train_vae.py</code> plus their guards. Then rebuild the configs; the numbers will not move.</li>
+<li><b>Zero risk, files:</b> delete <code>v2/tmp_*.py</code>.</li>
+<li><b>Low risk:</b> remove the unused <code>hier_vd</code> argument from the encoder branch and delete the <code>enc_local='hier'</code> branch in <code>ClothEncoder</code> (keep <code>HierEncoder</code> itself &mdash; the decoder and body tower use it), then re-instantiate and assert the VAE still reports 13.51 M parameters with zero missing/unexpected keys against <code>frozen/ckpt_020000.pt</code>.</li>
+<li><b>Low risk:</b> drop <code>fourier_enc</code> from <code>model.py</code>, and <code>kprox_proj</code> plus the <code>known_prox</code> flag from <code>prior.py</code> &mdash; the checkpoint confirms both are absent, so this is a pure deletion.</li>
+<li><b>Medium risk:</b> delete the <code>known_mode='joint'</code> path across <code>prior.py</code> and <code>common.py</code>. Requires that no shipped checkpoint was trained with <code>joint</code>; the shipped configs say <code>clamp</code>, so verify against <code>pr_vx20_d512</code>'s config too.</li>
+<li><b>Housekeeping:</b> the disk pass in &sect;5, and a decision about the V1 tree at the repo root.</li>
+</ol>
+<p class="mute" style="font-size:13.5px">Every step above should end with the same two checks: <code>python v2/run_pipeline.py --prior_exp pr_vx20_d512_ft_lr3e5 --prior_ckpt ckpt_020000.pt</code> renders identically, and <code>v2/eval_prior.py</code> reproduces the 1-NNA numbers in the table. Seed-fixed sampling through <code>viz/server.py</code> is the fastest smoke test.</p>
+
+</main>
+</body>
+</html>

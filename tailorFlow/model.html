@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TailorFlow &mdash; the final VAE and prior (detail)</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mute:#666;--line:#e2e2e2;--code:#f4f4f2;--accent:#2b5d8a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#151515;--fg:#e8e8e8;--mute:#999;--line:#333;--code:#202020;--accent:#8ab8e0}}
+:root[data-theme="dark"]{--bg:#151515;--fg:#e8e8e8;--mute:#999;--line:#333;--code:#202020;--accent:#8ab8e0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 Georgia,"Times New Roman",serif;padding-inline:16px;padding-block:40px 72px}
+main{max-width:960px;margin:0 auto}
+h1{font-size:28px;font-weight:normal;margin:0 0 6px}
+h2{font-size:19px;font-weight:normal;margin:46px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+h3{font-size:15px;font-weight:bold;margin:26px 0 8px}
+h4{font-size:14px;font-weight:bold;margin:18px 0 6px;color:var(--mute)}
+p{margin:0 0 12px}
+a{color:var(--accent)}
+.mute{color:var(--mute)}
+.lead{font-size:16px;color:var(--mute)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:680px}
+th,td{text-align:left;vertical-align:top;padding:9px 14px 9px 0;border-top:1px solid var(--line)}
+th{font-weight:normal;color:var(--mute);font-size:13px;border-top:0;white-space:nowrap}
+td:first-child,th:first-child{padding-left:0}
+td code,p code,li code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:1px 4px;border-radius:3px}
+td:first-child{white-space:nowrap}
+ul{margin:0 0 12px;padding-left:20px}
+li{margin:0 0 5px}
+.fig{overflow-x:auto;margin:10px 0 6px}
+.fig svg{display:block;min-width:820px;width:100%;height:auto}
+.cap{color:var(--mute);font-size:13.5px;margin:0 0 26px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:14px 0 20px}
+.card{border:1px solid var(--line);border-radius:5px;padding:11px 13px}
+.card b{font-weight:bold}
+.card .n{font-size:22px}
+.card .k{color:var(--mute);font-size:12.5px}
+.note{border-left:2px solid var(--accent);padding:2px 0 2px 13px;margin:16px 0;color:var(--mute);font-size:14px}
+.pill{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:1px 9px;color:var(--mute);margin-right:6px}
+nav{font-size:13.5px;color:var(--mute);margin:0 0 26px}
+nav a{margin-right:14px}
+svg text{font-family:Georgia,serif}
+svg .bx{fill:none;stroke:currentColor;stroke-width:1}
+svg .bx2{fill:var(--code);stroke:currentColor;stroke-width:1}
+svg .ln{fill:none;stroke:currentColor;stroke-width:1}
+svg .sm{font-size:10.5px;fill:var(--mute)}
+svg .md{font-size:12px}
+svg .ttl{font-size:12.5px;font-weight:bold}
+canvas{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:5px}
+.ctl{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13.5px;color:var(--mute);margin:10px 0 4px}
+label{display:flex;gap:6px;align-items:center}
+</style>
+</head>
+<body>
+<main>
+
+<h1>The final model <span class="mute" style="font-size:17px">&mdash; detail</span></h1>
+<p class="mute" style="font-size:13.5px;margin:-2px 0 14px">The long version. For the one-page <a href="index.html">latest vs old</a> summary, start there.</p>
+<p class="lead">A reference for the two checkpoints everything else is built on: the final hierarchical garment VAE and the
+rectified-flow latent prior trained on it. Every number below was read from the experiment configs, the training logs and
+the code in <code>v2/</code>, not from the paper draft.</p>
+
+<nav>
+<a href="index.html">&larr; latest vs old</a>
+<a href="#provenance">Provenance</a>
+<a href="#overview">Overview</a>
+<a href="#vae">VAE</a>
+<a href="#prior">Prior</a>
+<a href="#inference">Inference</a>
+<a href="#editing">Editing</a>
+<a href="#results">Results</a>
+<a href="#changed">Changed since the draft</a>
+<a href="dead_code.html">Code that is no longer needed &rarr;</a>
+</nav>
+
+<h2 id="provenance">Provenance</h2>
+<table>
+<tr><th></th><th>Final VAE</th><th>Final prior</th></tr>
+<tr><td>Experiment</td><td><code>v2/exps/vae_vx</code></td><td><code>v2/exps/pr_vx20_d512_ft_lr3e5</code></td></tr>
+<tr><td>Checkpoint</td><td><code>frozen/ckpt_020000.pt</code> (EMA)</td><td><code>ckpt_020000.pt</code> (EMA)</td></tr>
+<tr><td>Steps / batch</td><td>20 000 &times; 6 per GPU &times; 8 GPUs</td><td>20 000 &times; 32 per GPU &times; 4 GPUs (fine-tune of <code>pr_vx20_d512</code> @40k)</td></tr>
+<tr><td>Parameters</td><td>13.51 M</td><td>46.80 M &mdash; global 2.96 M / local 42.96 M / occ 0.88 M</td></tr>
+<tr><td>Wall clock</td><td>3 692 s</td><td>13 804 s</td></tr>
+<tr><td>Data</td><td colspan="2"><code>v2/data/C3D_TAPOSE</code> &mdash; CLOTH3D re-posed to T-pose with legs apart; 8 634 train / 818 val items over
+Dress, Upper, Trousers, Skirt, Jumpsuit</td></tr>
+<tr><td>Consumed by</td><td><code>train_prior.py</code>, <code>viz/server.py</code>, <code>paper.py</code>, <code>run_pipeline.py</code>, <code>eval_prior.py</code></td>
+<td>same, via <code>pc['vae']</code> in the prior config</td></tr>
+</table>
+<p class="mute" style="font-size:13.5px">The prior config pins <code>"vae": "v2/exps/vae_vx/frozen/ckpt_020000.pt"</code>, and
+<code>viz/server.py</code> and <code>v2/paper.py</code> hard-code <code>pr_vx20_d512_ft_lr3e5</code> @ <code>ckpt_020000.pt</code>.
+That pair <em>is</em> &ldquo;the model&rdquo;: everything else in <code>v2/exps/</code> is history.</p>
+
+<h2 id="overview">Overview</h2>
+
+<div class="fig">
+<svg viewBox="0 0 900 620" role="img" aria-label="Full architecture of the final VAE and prior">
+<defs>
+<marker id="a1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker>
+</defs>
+
+<!-- ============ VAE encode ============ -->
+<text class="ttl" x="8" y="14">1 &middot; VAE encode &#8212; garment on its own body &#8594; canonical latents</text>
+<rect class="bx2" x="8" y="30" width="106" height="40" rx="3"/>
+<text class="md" x="61" y="46" text-anchor="middle">garment</text><text class="sm" x="61" y="60" text-anchor="middle">4096&#215;3, world</text>
+<rect class="bx" x="126" y="30" width="106" height="40" rx="3"/>
+<text class="md" x="179" y="46" text-anchor="middle">re-anchor</text><text class="sm" x="179" y="60" text-anchor="middle">k=8, &#963;=0.01</text>
+<rect class="bx" x="244" y="30" width="120" height="40" rx="3"/>
+<text class="md" x="304" y="46" text-anchor="middle">canonical frame</text><text class="sm" x="304" y="60" text-anchor="middle">mean of 256 bodies</text>
+<rect class="bx2" x="376" y="30" width="120" height="40" rx="3"/>
+<text class="md" x="436" y="42" text-anchor="middle">global voxel U-Net</text><text class="sm" x="436" y="56" text-anchor="middle">voxel only, vd 64</text>
+<rect class="bx2" x="508" y="30" width="150" height="40" rx="3"/>
+<text class="md" x="583" y="42" text-anchor="middle">local encoder</text><text class="sm" x="583" y="56" text-anchor="middle">voxel U-Net, FiLM(z_g), SE</text>
+<rect class="bx2" x="670" y="30" width="112" height="40" rx="3"/>
+<text class="md" x="726" y="46" text-anchor="middle">z_g</text><text class="sm" x="726" y="60" text-anchor="middle">128</text>
+<path class="ln" d="M114,50 L124,50" marker-end="url(#a1)"/>
+<path class="ln" d="M232,50 L242,50" marker-end="url(#a1)"/>
+<path class="ln" d="M364,50 L374,50" marker-end="url(#a1)"/>
+<path class="ln" d="M496,50 L506,50" marker-end="url(#a1)"/>
+<path class="ln" d="M658,50 L668,50" marker-end="url(#a1)"/>
+<path class="ln" d="M658,74 L658,98 L726,98 L726,72" marker-end="url(#a1)"/>
+<text class="sm" x="664" y="92">posterior &#956;, &#963; (log-&#963; ceiling 0)</text>
+
+<!-- ============ latent ============ -->
+<rect class="bx2" x="8" y="112" width="774" height="54" rx="3" stroke-width="2"/>
+<text class="ttl" x="20" y="131">the latent &#8212; 4096 slots, no body in it</text>
+<text class="md" x="20" y="150">z_g &#8712; R&#185;&#178;&#8312; &nbsp;&nbsp;|&nbsp;&nbsp; pt &#8712; R&#8308;&#8304;&#8313;&#8310;&#215;&#179; = 0.01&#183;&#956; + x &nbsp;&nbsp;|&nbsp;&nbsp; feat &#8712; R&#8308;&#8304;&#8313;&#8310;&#215;&#8304; &nbsp;(empty)</text>
+<text class="sm" x="390" y="150">3 dims per point, not 4</text>
+<text class="sm" x="20" y="162">the same garment on another body encodes to nearly the same z</text>
+<text class="sm" x="600" y="131">log-&#963; offset 6 &middot; lv_max 0 &middot; &#963;_pt 1.5 mm</text>
+<text class="sm" x="600" y="145">KL: pt 30 &middot; feat 0.5 &middot; global 0.05</text>
+<text class="sm" x="600" y="159">skip 0.01 &middot; reanchor k=8, &#963;=0.01</text>
+<path class="ln" d="M583,70 L583,110" marker-end="url(#a1)"/>
+<text class="sm" x="590" y="90">z_l</text>
+
+<!-- ============ body ============ -->
+<text class="ttl" x="8" y="196">2 &middot; body tower &#8212; runs at decode time only, so the body can be swapped</text>
+<rect class="bx2" x="8" y="210" width="140" height="42" rx="3"/>
+<text class="md" x="78" y="228" text-anchor="middle">target body</text><text class="sm" x="78" y="243" text-anchor="middle">6890 verts (V,N) + &#946;&#8321;&#8320;</text>
+<rect class="bx2" x="162" y="210" width="160" height="42" rx="3"/>
+<text class="md" x="242" y="224" text-anchor="middle">hier. encoder, 6&#8594;d</text><text class="sm" x="242" y="239" text-anchor="middle">2048&#8594;512&#8594;256&#8594;128</text>
+<rect class="bx" x="336" y="210" width="112" height="42" rx="3"/>
+<text class="md" x="392" y="228" text-anchor="middle">z_body</text><text class="sm" x="392" y="243" text-anchor="middle">64 (+ &#946; MLP)</text>
+<rect class="bx" x="462" y="210" width="130" height="42" rx="3"/>
+<text class="md" x="527" y="224" text-anchor="middle">2048 landmarks</text><text class="sm" x="527" y="239" text-anchor="middle">body_kv, FPS on mean body</text>
+<rect class="bx" x="606" y="210" width="150" height="42" rx="3"/>
+<text class="md" x="681" y="224" text-anchor="middle">per-level body feats</text><text class="sm" x="681" y="239" text-anchor="middle">4 scales, kNN-fused</text>
+<path class="ln" d="M148,231 L160,231" marker-end="url(#a1)"/>
+<path class="ln" d="M322,231 L334,231" marker-end="url(#a1)"/>
+<path class="ln" d="M448,231 L460,231" marker-end="url(#a1)"/>
+<path class="ln" d="M592,231 L604,231" marker-end="url(#a1)"/>
+
+<!-- ============ occupancy ============ -->
+<text class="ttl" x="8" y="282">3 &middot; occupancy &#8212; a 6890-vertex field, edited directly, re-read every flow step</text>
+<rect class="bx2" x="8" y="296" width="140" height="42" rx="3"/>
+<text class="md" x="78" y="314" text-anchor="middle">o &#8712; {&#8722;1,0,1}&#8316;&#8312;&#8309;&#8304;</text><text class="sm" x="78" y="329" text-anchor="middle">covered / free / unknown</text>
+<rect class="bx" x="162" y="296" width="130" height="42" rx="3"/>
+<text class="md" x="227" y="314" text-anchor="middle">ring-smooth</text><text class="sm" x="227" y="329" text-anchor="middle">3 SMPL rings</text>
+<rect class="bx2" x="306" y="296" width="150" height="42" rx="3"/>
+<text class="md" x="381" y="310" text-anchor="middle">OccEncoder &#8594; 128</text><text class="sm" x="381" y="325" text-anchor="middle">null token, CFG drop 0.25</text>
+<rect class="bx" x="470" y="296" width="160" height="42" rx="3"/>
+<text class="md" x="550" y="310" text-anchor="middle">pocc(x)</text><text class="sm" x="550" y="325" text-anchor="middle">occ at current latent x, kNN&#8211;8</text>
+<rect class="bx" x="644" y="296" width="112" height="42" rx="3"/>
+<text class="md" x="700" y="314" text-anchor="middle">keep head</text><text class="sm" x="700" y="329" text-anchor="middle">trim to o</text>
+<path class="ln" d="M148,317 L160,317" marker-end="url(#a1)"/>
+<path class="ln" d="M292,317 L304,317" marker-end="url(#a1)"/>
+<path class="ln" d="M456,317 L468,317" marker-end="url(#a1)"/>
+<path class="ln" d="M630,317 L642,317" marker-end="url(#a1)"/>
+<path class="ln" d="M78,296 L78,266 L750,266 L750,290" marker-end="url(#a1)"/>
+<text class="sm" x="756" y="284">to the prior</text>
+<path class="ln" d="M550,338 L550,392" marker-end="url(#a1)"/>
+<text class="sm" x="556" y="366">to the decoder (28 dims) and to every local-prior level</text>
+
+<!-- ============ prior ============ -->
+<text class="ttl" x="8" y="384">4 &middot; the prior &#8212; rectified flow on the whitened latents, no body input</text>
+<rect class="bx2" x="8" y="398" width="150" height="46" rx="3"/>
+<text class="md" x="83" y="415" text-anchor="middle">GlobalPrior</text><text class="sm" x="83" y="430" text-anchor="middle">4 blocks FiLM+FF+SE, 256</text>
+<rect class="bx2" x="172" y="398" width="214" height="46" rx="3"/>
+<text class="md" x="279" y="415" text-anchor="middle">LocalPrior</text><text class="sm" x="279" y="430" text-anchor="middle">x-pred, hier SA/FP, d 512, 4 levels</text>
+<rect class="bx" x="400" y="398" width="150" height="46" rx="3"/>
+<text class="md" x="475" y="415" text-anchor="middle">FracHead</text><text class="sm" x="475" y="430" text-anchor="middle">new-cloth fraction f</text>
+<rect class="bx" x="564" y="398" width="192" height="46" rx="3"/>
+<text class="md" x="660" y="415" text-anchor="middle">loss</text><text class="sm" x="660" y="430" text-anchor="middle">MSE v and (z &#8722; &#951;)</text>
+<path class="ln" d="M158,421 L170,421" marker-end="url(#a1)"/>
+<text class="sm" x="8" y="462">interpolant x_t = (1&#8722;t)&#183;&#951; + t&#183;z &nbsp;&middot;&nbsp; t ~ sigmoid(N(0,1)) logit-normal &nbsp;&middot;&nbsp; &#951; OT-paired to z per class (Hungarian) &nbsp;&middot;&nbsp; cfg_drop 0.1 &nbsp;&middot;&nbsp; occ_cond_drop 0.25 &nbsp;&middot;&nbsp; inpaint_p 0.5</text>
+
+<!-- ============ decode ============ -->
+<text class="ttl" x="8" y="498">5 &middot; decode &#8212; re-anchor, add the learned offset on the target body</text>
+<rect class="bx2" x="8" y="512" width="150" height="46" rx="3"/>
+<text class="md" x="83" y="529" text-anchor="middle">Decoder</text><text class="sm" x="83" y="544" text-anchor="middle">hier + cross-attn + BodyFuse</text>
+<rect class="bx" x="172" y="512" width="185" height="46" rx="3"/>
+<text class="md" x="264" y="529" text-anchor="middle">head</text><text class="sm" x="264" y="544" text-anchor="middle">out = pt + &#916;(h, rel, n, occ)</text>
+<rect class="bx2" x="371" y="512" width="150" height="46" rx="3"/>
+<text class="md" x="446" y="529" text-anchor="middle">garment points</text><text class="sm" x="446" y="544" text-anchor="middle">on the target body</text>
+<rect class="bx" x="535" y="512" width="221" height="46" rx="3"/>
+<text class="md" x="645" y="529" text-anchor="middle">mesh_garment (screened Poisson)</text><text class="sm" x="645" y="544" text-anchor="middle">b3x_lap30 &middot; no neural refinement</text>
+<path class="ln" d="M158,535 L170,535" marker-end="url(#a1)"/>
+<path class="ln" d="M357,535 L369,535" marker-end="url(#a1)"/>
+<path class="ln" d="M521,535 L533,535" marker-end="url(#a1)"/>
+
+<!-- ============ sample loop ============ -->
+<rect class="bx" x="772" y="398" width="120" height="160" rx="3"/>
+<text class="ttl" x="832" y="418" text-anchor="middle">sampling</text>
+<text class="md" x="782" y="442">64 Euler /</text><text class="md" x="782" y="458">Heun steps</text>
+<text class="md" x="782" y="482">cfg 1.0</text>
+<text class="sm" x="782" y="498">(partitioned</text><text class="sm" x="782" y="512">above 4096</text><text class="sm" x="782" y="526">needs cfg=1)</text>
+<text class="md" x="782" y="548">L 4096&#8594;32768</text>
+<path class="ln" d="M756,421 L770,421" marker-end="url(#a1)"/>
+<path class="ln" d="M772,480 L770,480 L770,480" marker-end="url(#a1)"/>
+</svg>
+</div>
+<p class="cap"><b>The full picture.</b> Blue boxes hold learned weights that ship in a checkpoint; the VAE and the prior are
+trained separately. The single most important structural fact: <em>the body enters only at decode time</em>, so one sampled
+latent can be decoded on any body (body transfer) and any occupancy mask (trim / grow) without re-sampling the prior.</p>
+
+<h2 id="vae">1 &middot; The VAE</h2>
+<p><code>v2/model.py</code>, <code>ClothVAE</code> + <code>build_vae</code>. A two-level latent point autoencoder
+(LION-descendant) whose latents are <b>body-agnostic</b>: the input garment is first transferred from the body it is worn on
+to a fixed canonical body, so the body never appears on the input side of the encoder.</p>
+
+<h3>Configuration that actually ran</h3>
+<table>
+<tr><th>Key</th><th>Value</th><th>What it controls</th></tr>
+<tr><td><code>L</code></td><td>4096</td><td>latent slots = one slot per input point, no subsampling</td></tr>
+<tr><td><code>d</code></td><td>128</td><td>working width of the encoder/decoder trunks</td></tr>
+<tr><td><code>dg</code>, <code>dl</code>, <code>dbeta</code></td><td>128, <b>0</b>, 10</td><td>global latent; <b>no per-point feature channel</b>; SMPL betas into the body code. Verified at runtime: <code>feat</code> comes back with last dimension 0, so a latent slot is <b>3 numbers</b>, not 4</td></tr>
+<tr><td><code>enc_local</code></td><td><b>voxel</b></td><td>the local encoder is a plain voxel U-Net at width <code>vd=64</code>, <em>not</em> the point hierarchy. Verified against the checkpoint: <code>cloth_enc</code> contains no <code>downs</code>/<code>ups</code> keys. <code>hier_vd</code> is therefore used only by the <b>decoder</b> (all five levels, 32&#8594;32&#8594;64&#8594;64&#8594;64) and the body tower (<code>max(v//2,32)</code>), never by the encoder</td></tr>
+<tr><td><code>body_kv_k</code></td><td>2048</td><td>landmark vertices cross-attended in the decoder (FPS on the mean body)</td></tr>
+<tr><td><code>vres/vbound/vlevels/vd</code></td><td>32 / 5.0 / 2 / 64</td><td>voxel grid resolution, extent, U-Net depth, channel width</td></tr>
+<tr><td><code>hier_schedule</code></td><td>2048,512,256,128</td><td>body tower + decoder levels; also inherited by the prior</td></tr>
+<tr><td><code>reanchor_k</code>, <code>reanchor_sigma</code></td><td>8, 0.01</td><td>canonical transfer: 8 nearest body vertices, softmax over distances</td></tr>
+<tr><td><code>cover_rings</code></td><td>1</td><td>dilation of the &ldquo;unmet occupancy&rdquo; flag the decoder sees</td></tr>
+<tr><td><code>pt_sigma</code></td><td>1.5 mm</td><td>fixed position posterior &sigma;. The point block gets a <b>constant</b> log-variance; only the feature block is learned. With <code>dl=0</code> the local posterior is fully deterministic</td></tr>
+<tr><td><code>log_sigma_offset</code>, <code>lv_max</code></td><td>6.0, 0.0</td><td>posterior mean starts at &minus;12 in log-variance; posterior can never be wider than the prior</td></tr>
+<tr><td><code>kl_w_pt / kl_w_feat / kl_w_glb</code></td><td>30 / 0.5 / 0.05</td><td>KL per block (plus a soft penalty above <code>lv_max</code>)</td></tr>
+<tr><td><code>skip_weight_enc</code></td><td>0.01</td><td><code>pt = 0.01&#183;&#956; + x</code> &mdash; the latent <em>is</em> the input cloud plus a small residual</td></tr>
+<tr><td><code>l1_w</code>, <code>edge_w</code>, <code>emd_w</code>, <code>keep_w</code></td><td>0.02, 1.0, 1.0, 5.0</td><td>loss weights: ordered L1, kNN edge-length preservation, EMD, keep-head BCE</td></tr>
+<tr><td><code>pt_sigma</code>, <code>grow_frac</code>, <code>grow_w</code></td><td>1.5, 0.5, 0.1</td><td>half of the augmented rows are <em>grows</em> weighted at 0.1</td></tr>
+</table>
+
+<h3>Training rows (<code>train_vae.py:augment</code>)</h3>
+<p>Every batch mixes four row types over the <code>CutDataset</code>/<code>EditAug</code> coverage cuts (<code>occ_edit=0.6</code>,
+ramped over the first 1000 steps):</p>
+<table>
+<tr><th>Row</th><th>Encoder sees</th><th>Decoder target</th><th>Extra signal</th></tr>
+<tr><td>plain</td><td>the garment</td><td>the garment</td><td>CD + EMD + L1 + edge + KL</td></tr>
+<tr><td>unknown occ (30%)</td><td>the garment, <code>o = &minus;1</code></td><td>the garment</td><td>as plain &mdash; teaches unconditional decoding</td></tr>
+<tr><td>trim (50% of cuts)</td><td>the whole garment</td><td>the garment cut to mask A</td><td>keep-head BCE; the clipped points get no CD/L1 &mdash; positions are pinned by the constant &sigma;<sub>pt</sub> instead</td></tr>
+<tr><td>cut autoencode / grow</td><td>the cut garment</td><td>the cut / the full garment under full coverage</td><td>grows enter CD/EMD only, at <code>grow_w=0.1</code></td></tr>
+</table>
+<p class="note">This row design is what makes coverage editing a <em>data skill</em> rather than a post-hoc trick: because
+<code>dl=0</code> the point positions are nearly deterministic, so trimming is a pure selection problem for the keep head, and
+growing is a density problem the prior solves by inpainting.</p>
+
+<h3>Losses</h3>
+<p><code>loss = CD + EMD + 0.02&#183;L1 + edge + 0.01&#183;KL + 5&#183;BCE(keep)</code>, with CD/EMD distance-weighted and
+trim rows excluded from the reconstruction average. Validation tracks CD/EMD/inside% per category, plus an own-body vs
+rolled-body pair and a latent-spacing ratio (<code>run_xfer_val</code>) that detects collapsed transfer.</p>
+
+<h2 id="prior">2 &middot; The prior</h2>
+<p><code>v2/prior.py</code> + <code>v2/train_prior.py</code>. Two coupled <b>rectified-flow</b> models on the frozen VAE's
+whitened latents: <code>GlobalPrior</code> for <code>z_g</code>, then <code>LocalPrior</code> for the 4096&times;4 point block
+conditioned on <code>z_g</code>. Despite the name in the draft, there is no diffusion here.</p>
+
+<h3>What makes it a rectified flow, not a DDPM</h3>
+<table>
+<tr><th></th><th>Code</th><th>Consequence</th></tr>
+<tr><td>Interpolant</td><td><code>x_t = (1-t)&#183;&#951; + t&#183;z</code></td><td>straight line; no noise schedule, no <code>q(x_t|x_0)</code></td></tr>
+<tr><td>Target</td><td><code>x_&#952;</code> (clean latent), loss on <code>v = (x_&#952; &#8722; x_t)/(1&#8722;t)</code> against <code>z &#8722; &#951;</code></td><td>x-prediction; the sampler reconstructs v the same way</td></tr>
+<tr><td>Denominator</td><td><code>flow_denom_min = 0.05</code></td><td>clamp for the fat tail near <code>t&#8594;1</code>, where training and sampling must agree</td></tr>
+<tr><td>Timestep</td><td><code>t ~ sigmoid(N(0,1))</code>, plus 10% forced into [0.9,1.0] locally</td><td>logit-normal (SD3-style) + a tail emphasis for the local model</td></tr>
+<tr><td>Coupling</td><td><code>ot_pair</code>: exact Hungarian (<code>linear_sum_assignment</code>) on <code>cdist</code>, <b>within each class</b></td><td>rectified flow's OT-CFM coupling; <code>ot_global=1</code> solves it over all ranks' batches, one problem per class</td></tr>
+<tr><td>Sampler</td><td>Euler or Heun, <code>t = i/steps</code>, 64 steps</td><td>an ODE solve; the final evals use <code>heun</code> at 64 steps</td></tr>
+<tr><td>Guidance</td><td><code>v = u + cfg&#183;(v&#8722;u)</code> with a null class token and a learned occupancy null</td><td>CFG is supported but <code>cfg = 1.0</code> everywhere in the final runs</td></tr>
+</table>
+<p class="note"><b>Correction to the draft's numbers:</b> <code>REPORT_OUTDATEDNESS_AND_RELATED_WORK.md</code> &sect;1.4 says the
+prior uses <code>t_mode='logitnormal'</code>, <code>ot_couple=1</code>, <code>cfg=2.0</code> and a <em>separate occupancy CFG</em>.
+In this checkpoint <code>cfg</code> is 1.0, there is <b>no</b> separate occupancy-guidance option anywhere in
+<code>prior.py</code> or <code>train_prior.py</code>, and <code>ot_pair</code> is Hungarian rather than a Sinkhorn/
+<code>ot_couple</code> switch. <code>inp_seam_w</code> is 0.0 in the shipped config, so seam up-weighting is <b>off</b>.</p>
+
+<h3>Conditioning &mdash; and what is <em>not</em> conditioned</h3>
+<table>
+<tr><th>Model</th><th>Sees</th><th>Does not see</th></tr>
+<tr><td>GlobalPrior</td><td>class embedding, <code>OccEncoder(o)</code>, <code>t</code></td><td>the body, the local latent</td></tr>
+<tr><td>LocalPrior</td><td><code>z_g</code> (AdaGN + FiLM style path), class, <code>occ</code>, <code>pocc</code> re-read at every level, inpainting mask, Fourier features (6 bands) of position</td><td>the body</td></tr>
+<tr><td>OccEncoder</td><td>the 6890-vertex mask, with a learned null token</td><td>&mdash;</td></tr>
+</table>
+<p>The body-agnostic property is what allows the prior to be trained once and then decoded on any body. It is also why the
+encoder must transfer to the canonical body first: the prior models the distribution of <em>canonical</em> latents.</p>
+
+<h3>Fine-tuning stage (<code>pr_vx20_d512_ft_lr3e5</code>)</h3>
+<p>A 20k-step run at <code>lr 3e-5</code> from <code>pr_vx20_d512/ckpt_040000.pt</code>. The width <code>d = 512</code>
+(43 M local parameters) and <code>occ_smooth = 3</code> were already set in the base run; the fine-tune changed
+<code>inpaint_p 0.0&#8594;0.5</code>, <code>inp_seam_w 4&#8594;0</code>, <code>inp_patches 6&#8594;0</code>,
+<code>lr 2e-4&#8594;3e-5</code>, <code>steps 40000&#8594;20000</code>, and turned in-training validation off
+(<code>val 0</code>). The learned <code>FracHead</code> predicts the fraction of the grown garment that is new cloth; the
+count of inpainting rows follows from it.</p>
+
+<h2 id="inference">3 &middot; Inference and controls</h2>
+<table>
+<tr><th>Control</th><th>Where</th><th>Default</th></tr>
+<tr><td>Sampler steps</td><td><code>sample_prior(steps=…)</code></td><td>64</td></tr>
+<tr><td>Solver</td><td><code>solver='euler'|'heun'</code></td><td><code>heun</code> in the viz, <code>paper.py</code> and the final evals; the shipped eval logs are <code>heun64</code></td></tr>
+<tr><td>CFG</td><td><code>cfg</code></td><td>1.0 (partitioned sampling asserts 1.0)</td></tr>
+<tr><td>Points</td><td><code>L</code></td><td>4096 native; 32768 in the viz and paper figures, above 4096 via <code>sample_local_partitioned</code> (random 4096-point subsets each step, matching training density). Measured on an A100-class GPU: <b>3.8 s</b> for 64 Heun steps at 4096 points, <b>6.2 s</b> at 32768</td></tr>
+<tr><td>Coverage</td><td><code>occ</code> + <code>use_occ</code></td><td>off by default; <code>decode_occ</code> maps &ldquo;unused&rdquo; to <code>&minus;1</code> = unknown, which is a trained input</td></tr>
+<tr><td>Meshing</td><td><code>garment_mesh.POISSON_PRESETS</code></td><td><code>b3x_lap30</code> (also <code>b3x_lap15</code>): screened Poisson, grad &sigma; 3.0, iso &sigma; 6.0, 30 Laplacian interior iterations, then ear removal, small-component pruning, Taubin boundary smoothing and arc-length loop smoothing</td></tr>
+<tr><td>Seed</td><td>wall-clock-free</td><td><code>torch.manual_seed(seed)</code> before every sample, so a seed reproduces a garment</td></tr>
+<tr><td>Solver choice</td><td><code>euler</code> vs <code>heun</code></td><td>verified to give different results; the shipped evals are <code>heun64</code>, so keep <code>heun</code> when reproducing numbers</td></tr>
+</table>
+
+<h2 id="editing">4 &middot; Editing operations</h2>
+<p>All of these are latent-space operations in <code>v2/common.py</code>; the mesh never moves.</p>
+<table>
+<tr><th>Operation</th><th>Implementation</th><th>Notes</th></tr>
+<tr><td>Body transfer</td><td>decode the same <code>(z_g, pt, feat)</code> on a different body</td><td>free &mdash; the body is only an input to <code>Decoder</code> and <code>BodyTower</code></td></tr>
+<tr><td>Trim</td><td><code>vae.trim_keep</code> &rarr; <code>lat[:, keep]</code></td><td>the keep head thresholds at logit 0</td></tr>
+<tr><td>Grow</td><td><code>inpaint_prior</code>: hold the kept rows known, generate <code>g = f/(1&#8722;f)&#183;n_ref</code> new ones</td><td><code>known_mode='clamp'</code> pins the known rows at their clean value at every step</td></tr>
+<tr><td>Seam cleanup</td><td><code>edit_latent</code> + <code>dir_band</code></td><td>releases old points within 2&times;2 cm of the grow edge measured along the grow direction (arm parameter on sleeves, height elsewhere), soft release probability, then regenerates them from the new cloth. This is the <b>f2</b> variant the final model was evaluated with. <code>seam_band</code>/<code>ring_dist</code> are the older ring-based band and are unused outside <code>exps/_tools</code></td></tr>
+<tr><td>Interpolation</td><td><code>paper.py:slierp</code> / <code>paper_slerp.py</code></td><td>global latent slerp; hybrid mode keeps the global on the noise path so it stays in-distribution</td></tr>
+<tr><td>Transfer endpoints</td><td>encode two garments, inpaint from one's latent to the other's occupancy</td><td>used for the shape/topology transfer figures</td></tr>
+</table>
+
+<h2 id="results">5 &middot; Recorded numbers for this pair</h2>
+<h4>VAE (<code>vae_vx</code>, step 20000, EMA)</h4>
+<table>
+<tr><th>val CD</th><th>val EMD</th><th>val inside%</th><th>own-body inside%</th><th>transferred inside%</th></tr>
+<tr><td>0.136</td><td>0.550</td><td>0.33%</td><td>0.57%</td><td>0.74%</td></tr>
+</table>
+<p class="mute" style="font-size:13.5px">Final row of <code>v2/exps/vae_vx/progress.csv</code> (step 19 500).
+<code>run_xfer_val</code> also logs a latent-spacing ratio to W&amp;B only, so it is not in the CSV.</p>
+<h4>Prior (<code>pr_vx20_d512_ft_lr3e5</code>, step 20000, EMA, occ off, cfg 1.0, heun 64, 1-NNA at 2048 points, 500/class)</h4>
+<table>
+<tr><th>class</th><th>1-NNA-CD &darr;</th><th>inside% &darr;</th><th>GT inside%</th><th>depth (mm) &darr;</th></tr>
+<tr><td>Dress</td><td>64.3</td><td>0.37</td><td>0.02</td><td>1.47</td></tr>
+<tr><td>Upper</td><td>53.6</td><td>0.32</td><td>0.01</td><td>1.02</td></tr>
+<tr><td>Trousers</td><td>51.7</td><td>0.99</td><td>0.30</td><td>1.03</td></tr>
+<tr><td>Skirt</td><td>59.5</td><td>0.16</td><td>0.11</td><td>1.25</td></tr>
+<tr><td>Jumpsuit</td><td>48.9</td><td>0.95</td><td>0.12</td><td>1.39</td></tr>
+</table>
+<p class="mute" style="font-size:13.5px">Source: <code>v2/exps/pr_vx20_d512_ft_lr3e5/evalcd500_ckpt_020000/summary_occ0_cfg1_heun64_*.txt</code>.
+1-NNA-CD of 50% is the point where generated and reference samples are indistinguishable, so these are strong results in the
+lower tail, weaker for Dress. <code>inside%</code> is the fraction of generated cloth behind the body surface; the referenced
+comparison is the ground-truth rate in the same column.</p>
+
+<h2 id="changed">6 &middot; What the code does that the 3DV draft does not say</h2>
+<p>These are the points where <code>data/TailordiffReport/sec/03_method.tex</code> and the v2 code disagree. The draft's
+equations 3&ndash;4 (DDPM, &epsilon;-prediction, &pi;<sub>&#968;</sub>(z|c)), the <code>z_o</code> occupancy autoencoder, the
+PVConv / <code>Body-PVConv</code> layer, and the distance-field refinement module have no counterpart in the code at all.</p>
+<table>
+<tr><th>Draft</th><th>Code</th></tr>
+<tr><td>Two latent DDPMs, &epsilon;-prediction, 1000 steps</td><td>two rectified flows, x-prediction + velocity loss, minibatch-OT coupling, 64 Heun steps</td></tr>
+<tr><td>Body-aware encoding through <code>PVConv</code> / body voxel branch in the encoder</td><td>the encoder is body-free: canonical-frame transfer, then a voxel U-Net on garment points only. The body is a decoder-side tower</td></tr>
+<tr><td>Per-point latent <code>h &#8712; R^{N&times;D_h}</code> with a feature channel</td><td><code>dl = 0</code> &mdash; 3 numbers per slot, no feature channel, constant position &sigma;</td></tr>
+<tr><td>Occupancy edited through an MLP autoencoder on <code>z_o</code></td><td>no autoencoder; the mask is a conditioning signal and an edit operation on the vertices</td></tr>
+<tr><td>Distance-field module with weighted kNN features and iterative projection</td><td>removed. No <code>DFNet</code>, no refinement, no <code>refine</code> anywhere in <code>v2/</code>. Thin surfaces come from the keep head, the constant &sigma;<sub>pt</sub>, and screened-Poisson meshing with loop smoothing</td></tr>
+<tr><td>68k garments from four datasets</td><td>8 634 train items from <code>C3D_TAPOSE</code> alone</td></tr>
+<tr><td>Body-conditioned generation <code>p(h | z, x_b, o, c)</code></td><td>body-free <code>p(h | z, c, o, pocc)</code>; the body appears only in the decoder</td></tr>
+<tr><td>VAE 16.2 M parameters</td><td>13.51 M</td></tr>
+</table>
+<div class="note">
+<b>On the method name.</b> The generative half is a rectified flow, so <code>Diff</code> is now a misnomer; the draft defines
+<code>\cloprior</code> as <code>TailorDiff</code> in <code>definitions.tex:26</code>, so a rename is a one-line macro change.
+Note also that the shipped prior uses <b>Euler/Heun ODE integration of an OT-coupled flow</b>, which places it in the
+flow-matching / rectified-flow family, not in the &ldquo;JiT&rdquo; family &mdash; that term describes a transformer backbone,
+which is an orthogonal axis.
+</div>
+
+<h2 id="interactive">7 &middot; The OT coupling, live</h2>
+<p>Everything else in this model is standard; <code>ot_pair</code> is the one place where the prior differs from a textbook
+flow-matching model. Noise and data are matched by an optimal-transport plan <em>within each class</em>, so the straight-line
+paths to the noise actually cross less. The panel below draws a 2-D caricature of exactly that: the same data and the same
+noise, coupled independently (left) or by OT (right).</p>
+<div class="ctl">
+<label><input type="checkbox" id="showpaths" checked> draw the interpolation paths</label>
+<button id="redraw">new sample</button>
+<span id="stat"></span>
+</div>
+<canvas id="cv" width="900" height="300"></canvas>
+<p class="cap">Coupled with an entropic OT plan (Sinkhorn) &mdash; the shipped code solves the exact problem with Hungarian
+assignment instead, which is affordable at <code>bs=32</code> across 4 ranks. The metric printed above is the mean squared
+path length of the coupling: OT makes the ensemble of straight lines shorter and more coherent, which is why the same
+network reaches a given quality in fewer steps.</p>
+
+<script>
+(function(){
+  var cv=document.getElementById('cv'), g=cv.getContext('2d'), stat=document.getElementById('stat'),
+      cb=document.getElementById('showpaths'), btn=document.getElementById('redraw');
+  var N=160, W=cv.width, H=cv.height, half=W/2;
+  var css=getComputedStyle(document.body);
+  function sampleData(rng){
+    // 3 gaussian blobs (a stand-in for "classes" / modes of the latent distribution)
+    var modes=[[-0.62,0.10],[-0.10,-0.34],[0.42,0.28]], out=[], s=[0.13,0.10,0.15];
+    for(var i=0;i<N;i++){
+      var m=modes[i%3], k=s[i%3], u=0, v=0;
+      while(u===0) u=rng(); while(v===0) v=rng();
+      var r=Math.sqrt(-2*Math.log(u)), th=2*Math.PI*v;
+      out.push([m[0]+k*r*Math.cos(th), m[1]+k*r*Math.sin(th)]);
+    }
+    return out;
+  }
+  function sampleNoise(rng){
+    var out=[];
+    for(var i=0;i<N;i++){
+      var u=0,v=0; while(u===0)u=rng(); while(v===0)v=rng();
+      var r=Math.sqrt(-2*Math.log(u)), th=2*Math.PI*v;
+      out.push([0.92*r*Math.cos(th), 0.92*r*Math.sin(th)]);
+    }
+    return out;
+  }
+  function sinkhorn(A,B,eps,iters){
+    // cost = squared distance; entropic OT plan; returns target index per source index
+    var n=A.length, m=B.length, C=[], i, j, k;
+    for(i=0;i<n;i++){ C.push(new Float64Array(m));
+      for(j=0;j<m;j++){ var dx=A[i][0]-B[j][0], dy=A[i][1]-B[j][1]; C[i][j]=(dx*dx+dy*dy); } }
+    var K=new Float64Array(n*m);
+    for(i=0;i<n;i++) for(j=0;j<m;j++) K[i*m+j]=Math.exp(-C[i][j]/eps);
+    var u=new Float64Array(n).fill(1), v=new Float64Array(m).fill(1);
+    var a=new Float64Array(n).fill(1/n), b=new Float64Array(m).fill(1/m);
+    for(k=0;k<iters;k++){
+      for(j=0;j<m;j++){ var s1=0; for(i=0;i<n;i++) s1+=u[i]*K[i*m+j]; v[j]=s1>0?b[j]/s1:0; }
+      for(i=0;i<n;i++){ var s2=0; for(j=0;j<m;j++) s2+=v[j]*K[i*m+j]; u[i]=s2>0?a[i]/s2:0; }
+    }
+    var assign=new Int32Array(n), used=new Uint8Array(m).fill(0);
+    // greedy on the transport plan scaled by the marginals (P = diag(u) K diag(v))
+    var cand=[];
+    for(i=0;i<n;i++) for(j=0;j<m;j++) cand.push([u[i]*K[i*m+j]*v[j], i, j]);
+    cand.sort(function(p,q){return q[0]-p[0];});
+    for(k=0;k<cand.length;k++){ var t=cand[k]; if(used[t[2]]) continue; assign[t[1]]=t[2]; used[t[2]]=1; }
+    for(i=0;i<n;i++) if(!assign[i]){ for(j=0;j<m;j++) if(!used[j]){ assign[i]=j; used[j]=1; break; } }
+    return assign;
+  }
+  var seed=1;
+  function rng(){ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }
+  function fit(pts, x0){
+    var sc=180, ox=x0+half/2, oy=H/2;
+    return [ox+pts[0]*sc, oy-pts[1]*sc];
+  }
+  function drawSide(data, noise, assign, x0, label, mse){
+    var i;
+    g.save(); g.beginPath(); g.rect(x0,0,half,H); g.clip();
+    g.strokeStyle=css.getPropertyValue('--line'); g.lineWidth=1;
+    g.strokeRect(x0+0.5,0.5,half-1,H-1);
+    // data axes
+    g.strokeStyle=css.getPropertyValue('--line');
+    g.beginPath(); g.moveTo(x0, H/2+0.5); g.lineTo(x0+half, H/2+0.5); g.stroke();
+    if(cb.checked){
+      g.lineWidth=1;
+      for(i=0;i<data.length;i++){
+        var p=fit(data[i],x0), q=fit(noise[assign?assign[i]:i],x0);
+        // colour by which mode the data point came from
+        var hue=[350,205,145][i%3];
+        g.strokeStyle='hsla('+hue+',60%,55%,0.16)';
+        g.beginPath(); g.moveTo(q[0],q[1]); g.lineTo(p[0],p[1]); g.stroke();
+      }
+    }
+    for(i=0;i<noise.length;i++){ var q=fit(noise[i],x0);
+      g.fillStyle='rgba(120,120,130,0.55)'; g.beginPath(); g.arc(q[0],q[1],1.7,0,6.2832); g.fill(); }
+    for(i=0;i<data.length;i++){ var p=fit(data[i],x0);
+      var hue=[350,205,145][i%3];
+      g.fillStyle='hsl('+hue+',55%,50%)'; g.beginPath(); g.arc(p[0],p[1],2.4,0,6.2832); g.fill(); }
+    g.fillStyle=css.getPropertyValue('--fg');
+    g.font='12px Georgia,serif';
+    g.fillText(label, x0+10, 18);
+    g.fillStyle=css.getPropertyValue('--mute');
+    g.font='11.5px Georgia,serif';
+    g.fillText('mean |path|\u00b2  '+mse.toFixed(3), x0+10, 34);
+    g.restore();
+  }
+  function lengths(data, noise, assign){
+    var s=0;
+    for(var i=0;i<data.length;i++){ var q=noise[assign?assign[i]:i];
+      var dx=data[i][0]-q[0], dy=data[i][1]-q[1]; s+=dx*dx+dy*dy; }
+    return s/data.length;
+  }
+  function run(){
+    seed=Math.floor(Math.random()*1e9)+1;
+    var data=sampleData(rng), noise=sampleNoise(rng);
+    var assign=sinkhorn(data, noise, 0.05, 60);
+    var m1=lengths(data,noise,null), m2=lengths(data,noise,assign);
+    g.clearRect(0,0,W,H);
+    drawSide(data, noise, null,   0,    'independent coupling', m1);
+    drawSide(data, noise, assign, half, 'OT coupling (Hungarian in the code)', m2);
+    stat.textContent = 'shortening '+((1-m2/m1)*100).toFixed(1)+'%';
+  }
+  cb.addEventListener('change', run); btn.addEventListener('click', run);
+  window.addEventListener('resize', run);
+  run();
+})();
+</script>
+
+</main>
+</body>
+</html>
